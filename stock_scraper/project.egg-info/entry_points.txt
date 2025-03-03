@@ -1,0 +1,2 @@
+[scrapy]
+settings = stock_scraper.settings
