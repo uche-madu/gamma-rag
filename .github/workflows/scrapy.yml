@@ -28,4 +28,6 @@ jobs:
           echo "SCRAPEOPS_API_KEY=${{ secrets.SCRAPEOPS_API_KEY }}" >> $GITHUB_ENV
 
       - name: Run Scrapy Spider
-        run: scrapy crawl news
+        run: |
+          cd stock_scraper
+          scrapy crawl news
