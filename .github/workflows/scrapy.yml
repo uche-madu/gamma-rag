@@ -1,10 +1,9 @@
----
-
 name: Scrapy Spider Scheduler
 
 on:
   schedule:
     - cron: "0 */6 * * *"  # Runs every 6 hours
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -21,6 +20,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install scrapy
+
+      - name: Set up environment variables
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> $GITHUB_ENV
+          echo "SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}" >> $GITHUB_ENV
+          echo "SCRAPEOPS_API_KEY=${{ secrets.SCRAPEOPS_API_KEY }}" >> $GITHUB_ENV
 
       - name: Run Scrapy Spider
         run: scrapy crawl news

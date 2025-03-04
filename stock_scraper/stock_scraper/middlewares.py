@@ -3,10 +3,14 @@
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
+import random
+
 from scrapy import signals
 
 # useful for handling different item types with a single interface
 from itemadapter import is_item, ItemAdapter
+from fake_useragent import UserAgent
+
 
 
 class StockScraperSpiderMiddleware:
@@ -101,3 +105,27 @@ class StockScraperDownloaderMiddleware:
 
     def spider_opened(self, spider):
         spider.logger.info("Spider opened: %s" % spider.name)
+
+
+class UARotatorMiddleware:
+    def __init__(self, user_agents):
+        self.user_agents = user_agents
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        user_agents = crawler.settings.get('USER_AGENTS', [])
+        return cls(user_agents)
+
+    def process_request(self, request, spider):
+        if self.user_agents:
+            request.headers['User-Agent'] = random.choice(self.user_agents)
+
+
+class RandomUserAgentMiddleware:
+    """Middleware to set a random User-Agent for each request."""
+
+    def __init__(self):
+        self.ua = UserAgent()
+
+    def process_request(self, request, spider):
+        request.headers["User-Agent"] = self.ua.random
