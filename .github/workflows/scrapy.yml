@@ -20,9 +20,7 @@ jobs:
       - name: Install uv and dependencies
         run: |
           pip install uv
-          uv venv .venv
-          source .venv/bin/activate
-          uv pip install -r requirements.txt
+          uv pip install -r requirements.txt --system
 
       - name: Set up environment variables
         run: |
@@ -31,7 +29,5 @@ jobs:
           echo "SCRAPEOPS_API_KEY=${{ secrets.SCRAPEOPS_API_KEY }}" >> $GITHUB_ENV
 
       - name: Run Scrapy Spider
-        run: |
-          source .venv/bin/activate
-          scrapy crawl news
+        run: scrapy crawl news
         working-directory: stock_scraper
