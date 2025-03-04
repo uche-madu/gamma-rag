@@ -17,9 +17,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install uv and dependencies
         run: |
-          pip install scrapy
+          pip install uv
+          uv pip install -r requirements.txt
 
       - name: Set up environment variables
         run: |
