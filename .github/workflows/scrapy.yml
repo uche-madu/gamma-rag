@@ -3,7 +3,7 @@ name: Scrapy Spider Scheduler
 on:
   schedule:
     - cron: "0 */6 * * *"  # Runs every 6 hours
-  workflow_dispatch:
+  workflow_dispatch: # Manually trigger the workflow
 
 jobs:
   scrape:

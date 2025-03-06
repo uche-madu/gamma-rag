@@ -24,7 +24,8 @@ class SupabasePipeline:
         """Initialize Supabase client when the spider starts."""
         self.supabase_url = os.getenv("SUPABASE_URL")
         self.supabase_key = os.getenv("SUPABASE_KEY")
-        self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
+        if self.supabase_url and self.supabase_key:
+            self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
 
     def process_item(self, item, spider):
         """Insert scraped data into Supabase with error handling."""

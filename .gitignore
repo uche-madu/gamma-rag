@@ -43,3 +43,5 @@ yahoo_articles.json
 .vscode/
 .idea/
 .venv
+
+alembic.ini

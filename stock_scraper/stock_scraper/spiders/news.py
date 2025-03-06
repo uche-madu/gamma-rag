@@ -2,7 +2,7 @@ import os
 import re
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlencode, urlparse
-
+from dateutil import parser
 from dotenv import load_dotenv
 import scrapy
 
@@ -27,13 +27,6 @@ class NewsSpider(scrapy.Spider):
         "https://finance.yahoo.com/quote/TSLA/news",
         "https://finance.yahoo.com/quote/GOOG/news"
     ]
-
-    # def __init__(self, *args, **kwargs):
-    #     """Initialize Supabase client."""
-    #     super().__init__(*args, **kwargs)
-    #     self.supabase_url = os.environ.get("SUPABASE_URL") 
-    #     self.supabase_key = os.environ.get("SUPABASE_KEY")
-    #     self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
 
     def start_requests(self):
         """Route all initial URLs through the ScrapeOps proxy."""
@@ -74,6 +67,19 @@ class NewsSpider(scrapy.Spider):
 
         title = response.xpath('//div[contains(@class, "cover-title")]/text()').get()
         published_date = response.xpath('//time[@class="byline-attr-meta-time"]/@datetime').get()
+
+        # Convert published_date to UTC
+        if published_date:
+            try:
+                dt = parser.parse(published_date)  # Parse the date
+                dt = dt.astimezone(timezone.utc)  # Convert to UTC
+                published_date = dt.isoformat()  # Format as string
+            except Exception as e:
+                self.logger.error(f"Failed to parse date {published_date}: {e}")
+                published_date = None  # Handle parsing failure gracefully
+
+
+
         content = " ".join(response.xpath('//div[contains(@class, "body")]//p[contains(@class, "yf-1090901")]//text()').getall()).strip()
 
         # Extract author
