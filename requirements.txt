@@ -178,7 +178,7 @@ traitlets==5.14.3
 trustcall==0.0.37
 Twisted==24.11.0
 typer==0.15.2
-typing==3.10.0.0
+typing==3.10.0
 typing-inspect==0.9.0
 typing_extensions==4.12.2
 tzdata==2025.1
