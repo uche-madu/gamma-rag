@@ -1,3 +1,4 @@
+import asyncio
 import re
 import datetime
 from typing import List, Dict, TypedDict, Union, Sequence
@@ -6,12 +7,31 @@ from langgraph.graph import StateGraph
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
 from langchain_core.runnables import RunnableLambda
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from textblob import TextBlob
 
 from ..schemas.retrieval import ErrorResponse, RetrievalResponse, RetrievedArticle
-
 from .retrieval import format_retrieved_articles
 from ..config import groq_llm
 
+
+def get_combined_sentiment(text: str) -> str:
+    # VADER sentiment score
+    analyzer = SentimentIntensityAnalyzer()
+    vader_score = analyzer.polarity_scores(text)['compound']
+    
+    # TextBlob sentiment polarity
+    textblob_score = TextBlob(text).sentiment.polarity
+
+    # Simple averaging for demonstration; adjust weights as needed
+    combined_score = (vader_score + textblob_score) / 2
+
+    if combined_score >= 0.05:
+        return "positive"
+    elif combined_score <= -0.05:
+        return "negative"
+    else:
+        return "neutral"
 
 
 # Define the custom output parser function
@@ -37,8 +57,8 @@ prompt_template = ChatPromptTemplate.from_messages([
         "Your task is to analyze relevant stock market insights based on retrieved data. "
         "Be flexible in how you present your analysis, avoiding a rigid structure. "
         "Ensure your response is clear, actionable, and personalized for the user. "
-        "When you respond, address the user directly, without using third-person language."
-        "You may provide a summary of insights, discuss potential advantages and risks, and offer a sentiment-based recommendation."
+        "When you respond, address the user directly, without using third-person language. "
+        "You may provide a summary of insights, discuss potential advantages and risks, and offer a sentiment-based recommendation. "
         "Please provide your analysis and recommendation based on the retrieved information. If there's no relevant data, "
         "you can mention that and suggest a different query."
     ),
@@ -54,14 +74,13 @@ prompt_template = ChatPromptTemplate.from_messages([
     ),
 ])
 
-# Define state management for the LangGraph workflow
-# I want to also manage memory in the workflow via langgraph
 
 class GraphState(TypedDict):
     """State management for user queries, retrieved documents, and AI responses."""
     query: str
     retrieved_docs: Union[List[RetrievedArticle], str]
     formatted_query: str
+    sentiment: str
     response: str
 
 
@@ -116,6 +135,27 @@ async def format_prompt(state: GraphState) -> GraphState:
 
     return state
 
+async def analyze_sentiment(state: GraphState) -> GraphState:
+    """Analyze the sentiment of the user query and update the prompt."""
+    logger.info("Analyzing sentiment for the query...")
+    
+    # Run sentiment analysis in a separate thread
+    sentiment = await asyncio.to_thread(get_combined_sentiment, state["query"])
+    state["sentiment"] = sentiment
+
+    if sentiment == "positive":
+        sentiment_prompt = "The user appears optimistic about this investment. Provide a balanced analysis with potential opportunities and risks."
+    elif sentiment == "negative":
+        sentiment_prompt = "The user appears cautious about this investment. Focus on risk mitigation strategies and market stability."
+    else:
+        sentiment_prompt = "The user seems neutral about this investment. Provide an unbiased and comprehensive analysis."
+
+    # Append the sentiment-specific guidance to the formatted query
+    state["formatted_query"] += "\n\n" + sentiment_prompt
+    logger.debug(f"Sentiment analysis complete. Sentiment: {sentiment}")
+    
+    return state
+
 async def generate_response(state: GraphState) -> GraphState:
     """Generate AI response and process output."""
     logger.info("Generating AI response...")
@@ -130,7 +170,6 @@ async def generate_response(state: GraphState) -> GraphState:
         raw_response = "".join(response_chunks)
 
         # Process the raw response to remove <think></think> tags
-        # from DeepSeek model output
         state["response"] = await output_parser.ainvoke(raw_response)
         logger.info(f"Generated and processed response successfully. Length: {len(state['response'])}")
     except Exception as e:
@@ -146,15 +185,15 @@ async def rag_chat_workflow():
     
     graph.add_node("process_query", process_query)
     graph.add_node("format_prompt", format_prompt)
+    graph.add_node("analyze_sentiment", analyze_sentiment)
     graph.add_node("generate_response", generate_response)
     
     graph.set_entry_point("process_query")
     graph.add_edge("process_query", "format_prompt")
-    graph.add_edge("format_prompt", "generate_response")
+    graph.add_edge("format_prompt", "analyze_sentiment")
+    graph.add_edge("analyze_sentiment", "generate_response")
 
     logger.info("LangGraph workflow initialized.")
     
     return graph.compile()
-
-
 

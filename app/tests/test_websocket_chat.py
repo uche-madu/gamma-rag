@@ -10,10 +10,10 @@ import json
 # 5. Look at the **"Authorize"** button (a lock icon) in the top-right corner.
 # 6. Click it, copy the **Bearer Token**, and replace JWT_TOKEN below.
 
-JWT_TOKEN = "REPLACE_WITH_YOUR_JWT_TOKEN"
+# JWT_TOKEN = "REPLACE_WITH_YOUR_JWT_TOKEN"
 
 # Example JWT Token:
-# JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NzY3N2Q4Yy0wOWM4LTQ3MjItYWIzNy0wMTE2ZDA3N2EzYWYiLCJhdWQiOlsiZmFzdGFwaS11c2VyczphdXRoIl19.6m9mC-escj2eWbdgrwB-_D0rCiHvoeHm1bqSB_0_gvE"
+JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NzY3N2Q4Yy0wOWM4LTQ3MjItYWIzNy0wMTE2ZDA3N2EzYWYiLCJhdWQiOlsiZmFzdGFwaS11c2VyczphdXRoIl19.6m9mC-escj2eWbdgrwB-_D0rCiHvoeHm1bqSB_0_gvE"
 
 async def test_websocket():
     uri = f"ws://localhost:8000/chat/ws?token={JWT_TOKEN}"
