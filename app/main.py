@@ -9,13 +9,24 @@ from .services.user_manager import current_active_user
 from .routers.auth import router as auth_router
 from .routers.article import router as article_router
 from .routers.chat import router as chat_router
+from .routers.websocket_chat import router as websocket_chat_router
 from .scheduler.embedding_scheduler import start_scheduler, shutdown_scheduler
+from loguru import logger
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Handle app lifecycle events."""
+    logger.info("🚀 Starting application...")
+    
+    # Start scheduler for background tasks
     start_scheduler()
-    yield
+
+    yield  # The app runs during this time
+
+    # Cleanup on shutdown
     shutdown_scheduler()
+    logger.info("🛑 Shutting down application...")
 
 app = FastAPI(lifespan=lifespan, title="Gamma Financial Advisor API", version="1.0")
 
@@ -30,7 +41,7 @@ app.add_middleware(
 )
 
 # Register routers
-routers = [auth_router, article_router, chat_router]  # List of all routers
+routers = [auth_router, article_router, chat_router, websocket_chat_router]  # List of all routers
 for router in routers:
     app.include_router(router)
 

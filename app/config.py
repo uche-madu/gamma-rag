@@ -22,7 +22,7 @@ embedding_model = NomicEmbeddings(
 
 # Groq model initialization
 groq_llm = init_chat_model( 
-    model="llama-3.3-70b-versatile", 
+    model="deepseek-r1-distill-llama-70b", 
     model_provider="groq",
-    temperature=0.2
+    temperature=0.5
 )

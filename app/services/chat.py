@@ -1,16 +1,31 @@
-
+import re
 import datetime
 from typing import List, Dict, TypedDict, Union, Sequence
 
 from langgraph.graph import StateGraph
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
+from langchain_core.runnables import RunnableLambda
 
 from ..schemas.retrieval import ErrorResponse, RetrievalResponse, RetrievedArticle
 
 from .retrieval import format_retrieved_articles
 from ..config import groq_llm
 
+
+
+# Define the custom output parser function
+def remove_think_tags(response: str) -> str:
+    """
+    Remove content within <think></think> tags from the model's response.
+    """
+    # Regular expression to match content within <think></think> tags
+    think_tag_pattern = r'<think>.*?</think>'
+    cleaned_response = re.sub(think_tag_pattern, '', response, flags=re.DOTALL)
+    return cleaned_response.strip()
+
+# Create a RunnableLambda for the output parser
+output_parser = RunnableLambda(remove_think_tags)
 
 # Get the current date dynamically
 current_date = datetime.datetime.today().strftime("%B %d, %Y")
@@ -20,20 +35,22 @@ prompt_template = ChatPromptTemplate.from_messages([
     ("system",
         "You are an experienced financial analyst specializing in investment research. "
         "Your task is to analyze relevant stock market insights based on retrieved data. "
-        "Ensure your response is data-driven, structured, and easy to understand."
+        "Be flexible in how you present your analysis, avoiding a rigid structure. "
+        "Ensure your response is clear, actionable, and personalized for the user. "
+        "When you respond, address the user directly, without using third-person language."
+        "You may provide a summary of insights, discuss potential advantages and risks, and offer a sentiment-based recommendation."
+        "Please provide your analysis and recommendation based on the retrieved information. If there's no relevant data, "
+        "you can mention that and suggest a different query."
     ),
     ("human",
         "Today's date is {current_date}.\n\n"
-        "Consider the user's sentiment toward this investment.\n"
+        "Consider your sentiment towards this investment based on the following data.\n"
         "### Retrieved Financial Articles:\n"
         "{formatted_articles}\n\n"
-        "Based on the above, analyze the company's current market position and provide an investment assessment.\n\n"
-        "### Response Format:\n"
-        "1. **Summary of Key Financial Insights:**\n"
-        "2. **Advantages of Investing:**\n"
-        "3. **Risks and Disadvantages:**\n"
-        "4. **Sentiment-Based Recommendation:**\n\n"
-        "Ensure your response is professional, structured, and actionable."
+        "Based on the retrieved information, provide an analysis of the company's market position "
+        "and offer an investment recommendation.\n\n"
+        "Feel free to vary the format and structure of your response, but ensure it is personalized, clear, "
+        "and actionable. You may provide a summary of insights, discuss potential advantages and risks, and offer a sentiment-based recommendation."
     ),
 ])
 
@@ -75,11 +92,17 @@ async def process_query(state: GraphState) -> GraphState:
 
     return state
 
-
 async def format_prompt(state: GraphState) -> GraphState:
     """Format prompt with retrieved docs."""
     logger.info("Formatting prompt...")
-    logger.debug(f"Current retrieved_docs: {state['retrieved_docs']}")
+
+    if not state["retrieved_docs"]:
+        state["formatted_query"] = (
+            f"Today's date is {current_date}.\n\n"
+            "No relevant financial insights were found for the given query. "
+            "Please ask about stocks we have data on, such as Nvidia, Tesla, or Google."
+        )
+        return state
 
     try:
         state["formatted_query"] = prompt_template.format(
@@ -94,19 +117,28 @@ async def format_prompt(state: GraphState) -> GraphState:
     return state
 
 async def generate_response(state: GraphState) -> GraphState:
-    """Generate AI response."""
+    """Generate AI response and process output."""
     logger.info("Generating AI response...")
     logger.debug(f"Formatted Query: {state['formatted_query'][:200]}")  # Log first 200 chars
 
     try:
-        response_chunks = [chunk.content async for chunk in groq_llm.astream(state["formatted_query"]) if isinstance(chunk.content, str)]
-        state["response"] = "".join(response_chunks)
-        logger.info(f"Generated response successfully. Length: {len(state['response'])}")
+        # Stream response from the LLM
+        response_chunks = [
+            chunk.content async for chunk in groq_llm.astream(state["formatted_query"])
+            if isinstance(chunk.content, str)
+        ]
+        raw_response = "".join(response_chunks)
+
+        # Process the raw response to remove <think></think> tags
+        # from DeepSeek model output
+        state["response"] = await output_parser.ainvoke(raw_response)
+        logger.info(f"Generated and processed response successfully. Length: {len(state['response'])}")
     except Exception as e:
-        logger.error(f"Error generating chat response: {e}")
+        logger.error(f"Error generating or processing chat response: {e}")
         state["response"] = "Sorry, I encountered an issue processing your request."
 
     return state
+
 
 async def rag_chat_workflow():
     """Initialize LangGraph workflow."""

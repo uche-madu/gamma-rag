@@ -41,3 +41,4 @@ async def chat_endpoint(request: ChatRequest, user: Annotated[User, Depends(curr
     except Exception as e:
         logger.exception("Chat endpoint error")
         raise HTTPException(status_code=500, detail="Internal server error")
+

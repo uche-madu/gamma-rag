@@ -16,23 +16,27 @@ vector_store = SupabaseVectorStore(
 )
 
 async def retrieve_relevant_articles(query: str) -> List[RetrievedArticle]:
-    """Retrieve top-k most relevant stock-related articles based on user query."""
+    """Retrieve top-k most relevant stock-related articles based on user query with similarity search."""
+
     try:
         logger.info(f"Searching for relevant articles related to: {query}")
 
-        retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 5})
- 
-        results = await retriever.ainvoke(query)
+        # Perform the similarity search with the score threshold
+        results = vector_store.similarity_search_with_relevance_scores(query, k=7, score_threshold=0.8)
 
+        # Check if any results were found
         if not results:
             logger.warning("No relevant articles found.")
             return []
 
-        logger.info(f"Found {len(results)} relevant articles.")
+        # Log the first result for debugging
+        logger.debug(f"First result: {results[0]}")
 
+        # Process the results into the RetrievedArticle model
         retrieved_articles = []
-        for doc in results:
+        for doc, score in results:
             metadata = doc.metadata
+
             retrieved_articles.append(
                 RetrievedArticle(
                     stock_symbol=metadata.get("stock_symbol"),
@@ -40,18 +44,18 @@ async def retrieve_relevant_articles(query: str) -> List[RetrievedArticle]:
                     url=metadata.get("url"),
                     published_date=metadata.get("published_date"),
                     content=doc.page_content,
+                    score=score, # Include the similarity score
                 )
             )
 
         logger.debug(f"Formatted retrieved articles: {[article.model_dump() for article in retrieved_articles]}")
 
-
+        # Return the list of formatted articles
         return [article.model_dump() for article in retrieved_articles]
 
     except Exception as e:
         logger.exception(f"Error retrieving articles: {e}")
         return []
-
 
 async def format_retrieved_articles(query: str) -> RetrievalResponse | ErrorResponse:
     """Retrieve relevant articles and return a structured response."""

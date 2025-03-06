@@ -7,6 +7,7 @@ class RetrievedArticle(BaseModel):
     url: HttpUrl | None = None
     published_date: str | None = None
     content: str
+    score: float | None = None
 
 class RetrievalResponse(BaseModel):
     query: str
