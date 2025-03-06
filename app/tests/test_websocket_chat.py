@@ -1,39 +1,19 @@
-# import pytest
-# from httpx import AsyncClient
-# from starlette.testclient import TestClient
-# from websockets import connect
-# import asyncio
-
-# from main import app  # Import your FastAPI app
-
-# @pytest.fixture
-# async def test_client():
-#     async with AsyncClient(app=app, base_url="http://test") as ac:
-#         yield ac
-
-# @pytest.mark.asyncio
-# async def test_websocket_chat():
-#     uri = "ws://localhost:8000/chat/ws"
-    
-#     async with connect(uri) as websocket:
-#         await websocket.send('{"query": "Tell me about stock trends"}')
-#         response = await websocket.recv()
-        
-#         assert response is not None
-#         assert isinstance(response, str)  # Ensure it's a valid string response
-
-
-
 import asyncio
 import websockets
 import json
 
-import urllib.parse
+# 🔑 INSTRUCTIONS TO GET JWT TOKEN FROM SWAGGER UI:
+# 1. Open your FastAPI Swagger UI: http://localhost:8000/docs
+# 2. Register a new user using the `/register` endpoint.
+# 3. Log in using the `/login` endpoint.
+# 4. After a successful login, click on any secured route.
+# 5. Look at the **"Authorize"** button (a lock icon) in the top-right corner.
+# 6. Click it, copy the **Bearer Token**, and replace JWT_TOKEN below.
 
+JWT_TOKEN = "REPLACE_WITH_YOUR_JWT_TOKEN"
 
-JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NzY3N2Q4Yy0wOWM4LTQ3MjItYWIzNy0wMTE2ZDA3N2EzYWYiLCJhdWQiOlsiZmFzdGFwaS11c2VyczphdXRoIl19.6m9mC-escj2eWbdgrwB-_D0rCiHvoeHm1bqSB_0_gvE"
-
-encoded_token = urllib.parse.quote(JWT_TOKEN)
+# Example JWT Token:
+# JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NzY3N2Q4Yy0wOWM4LTQ3MjItYWIzNy0wMTE2ZDA3N2EzYWYiLCJhdWQiOlsiZmFzdGFwaS11c2VyczphdXRoIl19.6m9mC-escj2eWbdgrwB-_D0rCiHvoeHm1bqSB_0_gvE"
 
 async def test_websocket():
     uri = f"ws://localhost:8000/chat/ws?token={JWT_TOKEN}"
@@ -42,7 +22,7 @@ async def test_websocket():
         print("Connected to WebSocket server.")
 
         # Send a test message
-        test_message = {"query": "Tell me about stock trends"}
+        test_message = {"query": "Is this a good time to buy Tesla stock?"}
         await websocket.send(json.dumps(test_message))
         print(f"Sent: {test_message}")
 
