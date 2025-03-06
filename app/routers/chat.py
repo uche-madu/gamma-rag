@@ -34,7 +34,7 @@ async def chat_endpoint(request: ChatRequest, user: Annotated[User, Depends(curr
             final_state = state
     
         logger.success("Workflow execution completed successfully.")
-        logger.info(f"Final response generated: {final_state["generate_response"]["response"]}")
+        logger.info(f'Final response generated: {final_state["generate_response"]["response"]}')
 
         return ChatResponse(response=final_state["generate_response"]["response"])
 
