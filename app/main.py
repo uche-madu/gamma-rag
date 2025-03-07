@@ -53,8 +53,21 @@ async def root():
         "message": "Welcome to the Gamma Financial Advisor API! 🚀",
         "docs": "Visit /docs for the interactive API documentation (Swagger UI).",
         "redoc": "Visit /redoc for the alternative API documentation (ReDoc).",
-        "info": "Use this API to interact with financial insights, AI-powered analysis, and more."
+        "info": "Use this API to interact with financial insights, AI-powered analysis, and more.",
+        "authentication": {
+            "register": "Send a POST request to /auth/register with your details.",
+            "login": "Authenticate at /auth/jwt/login to get a JWT token.",
+            "protected_routes": "Include the token in the Authorization header as 'Bearer <token>' for protected routes."
+        },
+        "usage": {
+            "financial_advice": "Send a POST request to /chat with {'query': 'your financial question'} to receive insights.",
+            "embed_articles": "Trigger embeddings for articles by sending a POST request to /articles/embed-all.",
+        },
+        "websocket": {
+            "real_time_chat": "Connect to /chat/ws with a valid token for real-time AI-powered financial conversations."
+        }
     }
+
 
 
 # Protected Route (Only logged-in users)
