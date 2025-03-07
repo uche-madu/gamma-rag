@@ -19,6 +19,8 @@ async def process_embedding(
     background_tasks: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_async_session)]
 ):
+    """Trigger embedding for a single article in the background."""
+
     article = await session.get(Article, article_id)
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
@@ -41,7 +43,7 @@ async def process_embeddings(
     # Add the embedding task to background tasks
     background_tasks.add_task(embed_articles, session)
 
-    return {"message": "Embedding process started for all articles."}
+    return {"message": "Embedding process started for all unprocessed articles."}
 
 
 # @router.get("/financial-advice/", response_model=RetrievalResponse | ErrorResponse)
