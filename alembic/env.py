@@ -76,7 +76,7 @@ async def run_migrations_online() -> None:
 
     """
     connectable = create_async_engine(
-        config.get_main_option("sqlalchemy.url"),
+        config.get_main_option("sqlalchemy.url"),  # type: ignore
         poolclass=pool.NullPool, 
     )
 

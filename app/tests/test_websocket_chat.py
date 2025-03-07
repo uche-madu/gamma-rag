@@ -17,27 +17,37 @@ JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NzY3N2Q4Yy0wOWM4LT
 
 async def test_websocket():
     # Connect to the local WebSocket server
-    # uri = f"ws://localhost:8000/chat/ws?token={JWT_TOKEN}"
+    uri = f"ws://localhost:8000/chat/ws?token={JWT_TOKEN}"
 
     # Connect to the deployed WebSocket server
-    uri = f"wss://gamma-rag-financial-advisor.onrender.com/chat/ws"
+    # uri = f"wss://gamma-rag-financial-advisor.onrender.com/chat/ws?token={JWT_TOKEN}"
     
     async with websockets.connect(uri) as websocket:
         print("Connected to WebSocket server.")
 
-        # Send a test message
-        test_message = {"query": "Is this a good time to buy Tesla stock?"}
-        await websocket.send(json.dumps(test_message))
-        print(f"Sent: {test_message}")
+        # List of test queries to simulate user interactions
+        test_queries = [
+            {"query": "What is the current market trend?"},
+            {"query": "Is this a good time to buy Tesla stock?"},
+            {"query": "What was my previous query?"}
+        ]
 
-        # Receive response
-        while True:
+        for test_message in test_queries:
             try:
+                # Send a test message
+                await websocket.send(json.dumps(test_message))
+                print(f"Sent: {test_message}")
+
+                # Receive and print the response
                 response = await websocket.recv()
                 print(f"Received: {response}")
+
             except websockets.exceptions.ConnectionClosed:
                 print("Connection closed by the server.")
                 break
+
+            # Wait for a short period before sending the next query
+            await asyncio.sleep(1)
 
 # Run the test
 asyncio.run(test_websocket())
