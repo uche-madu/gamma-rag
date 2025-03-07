@@ -1,6 +1,15 @@
-# Financial Advice Chatbot
+# Gamma Financial Advice Chatbot
 
-This project is a **Financial Advice Chatbot** powered by **FastAPI, LangChain, LangGraph, and Supabase**. It leverages **pgvector** in Postgres to enable efficient vector search, uses **Nomic embeddings**, and integrates **Groq** for LLM-based responses. The chatbot provides financial insights based on web-scraped data from key sources.
+This project is a **Financial Advice Chatbot** powered by **FastAPI, LangChain, LangGraph, and Supabase**. It leverages **pgvector** in PostgreSQL for efficient vector search, uses **Nomic embeddings**, and integrates **Groq** for LLM-based responses. The chatbot provides financial insights based on web-scraped data from key sources.
+
+## Live API Backend
+The API is deployed and accessible at: [Live Backend](https://gamma-rag-financial-advisor.onrender.com/)
+- Swagger UI: `/docs`
+- ReDoc: `/redoc`
+
+## Workflow
+
+![Workflow Diagram](assets/gamma_financial_advisor.png)
 
 ## Features
 
@@ -9,14 +18,26 @@ This project is a **Financial Advice Chatbot** powered by **FastAPI, LangChain, 
 - **Postgres with pgvector**: Stores scraped data and enables vector-based retrieval.
 - **Embeddings via Nomic API**: Converts scraped articles into vector format.
 - **Automated Embedding Updates**:
-  - Runs **10 seconds after FastAPI starts/restarts** via a background task in FastAPI.
+  - Runs **10 seconds after FastAPI starts/restarts** via a background task.
   - Updates **every 6 hours** to match scraping frequency.
 - **FastAPI Backend**:
   - User Authentication (Register/Login)
   - Embedding Articles
   - RAG Chat for Financial Advice
+- **Sentiment Analysis**: Enhances response quality using TextBlob + VaderSentiment.
 - **Swagger UI for API Testing**
 - **Alembic for Database Migrations**
+
+## Tech Stack
+
+- **Backend:** FastAPI
+- **Database & Vector Store:** Supabase (PostgreSQL with `pgvector` extension)
+- **Web Scraping:** Scrapy
+- **Embeddings:** Nomic (nomic-embed-text-v1.5)
+- **LLM:** DeepSeek via Groq API (deepseek-r1-distill-llama-70b)
+- **Orchestration:** LangGraph
+- **Authentication:** FastAPI Users
+- **Infrastructure:** GitHub Actions (for scheduled scraping jobs)
 
 ## Required Environment Variables
 
@@ -32,12 +53,13 @@ ALGORITHM="HS256"
 GROQ_API_KEY=
 NOMIC_API_KEY=
 ```
+
 ## Installation & Setup
 
 ### 1. Clone the Repository
 ```sh
- git clone https://github.com/uche-madu/gamma-rag.git
- cd gamma-rag
+git clone https://github.com/uche-madu/gamma-rag.git
+cd gamma-rag
 ```
 
 ### 2. Install Dependencies
@@ -60,63 +82,76 @@ scrapy crawl news
 
 ## Database Migrations with Alembic
 
-To set up database migrations with Alembic, follow these steps:
-
-1. **Initialize Alembic** (run from the root folder):
-   For async support, use:
+1. **Initialize Alembic**:
    ```sh
    alembic init -t async alembic
    ```
-2. **Configure `alembic.ini` and `env.py`** to point to the correct database URL.
+2. **Configure `alembic.ini` and `env.py`** with the correct database URL.
 3. **Generate a new migration script**:
    ```sh
    alembic revision --autogenerate -m "Initial migration"
    ```
-4. **Review the generated migration script** before applying changes.
-   - Not all database tables are created via FastAPI.
-   - Tables such as `articles`, `documents` and the HNSW `index` are manually created using `supabase.sql` in the Supabase SQL Editor.
-   - Ensure that the migration does not delete or overwrite existing tables.
-5. **Apply the migration only after verification**:
+4. **Review the migration script** before applying changes.
+5. **Apply the migration**:
    ```sh
    alembic upgrade head
    ```
 
-## API Usage
+## Workflow Breakdown
 
-### 1. Authentication
+### 1. **News Scraping & Storage**
+- Scrapy extracts financial news articles and stores them in the **articles table** in Supabase.
+- The scraper runs **every 6 hours** via GitHub Actions.
+- Supabase's `pg_cron` extension deletes articles older than **24 hours**:
+  ```sql
+  select cron.schedule(
+      'delete_old_articles',
+      '0 */6 * * *',
+      $$ delete from articles where scraped_at < now() - interval '24 hours' $$
+  );
+  ```
 
-To interact with the API, users must **register and log in**:
+### 2. **Embedding Generation & Vector Storage**
+- A FastAPI background task retrieves **articles where `is_embedded=false`**.
+- It chunks the content and calls **Nomic embeddings API**.
+- The embeddings are stored in the **documents table** in Supabase with an HNSW index for fast retrieval.
+- **Embedding model:**
+  ```python
+  embedding_model = NomicEmbeddings(
+      model='nomic-embed-text-v1.5',
+      inference_mode='remote',
+      nomic_api_key=os.getenv('NOMIC_API_KEY')
+  )
+  ```
 
-- **Register**: `POST /auth/register` with `email`, `username`, and `password`.
-- **Login**: `POST /auth/login` to obtain an authentication token.
+### 3. **Retrieval, Sentiment Analysis & Response Generation**
+- The **retrieval service** fetches relevant articles using **match_documents function**.
+- It filters results with **similarity >= 0.8**.
+- The query undergoes **sentiment analysis using TextBlob + VaderSentiment**.
+- The sentiment score is included in the LLM prompt.
+- **LLM Model (DeepSeek via Groq API)**:
+  ```python
+  groq_llm = init_chat_model(
+      model='deepseek-r1-distill-llama-70b',
+      model_provider='groq',
+      temperature=0.5
+  )
+  ```
+- The response is streamed back to the user.
 
-Once logged in, users can access protected routes (lock icons in Swagger UI).
-
-### 2. Chat for Financial Advice
-
-- After logging in, visit `/chat` to ask financial questions.
-- Currently, scraped data **only includes information for Nvidia, Google, and Tesla**.
-- For better performance, restrict queries to these companies.
-- Responses are generated based on a **prompt template** to maintain coherence.
-
-## Tech Stack
-
-- **FastAPI** (API & background tasks)
-- **Scrapy** (Web Scraping)
-- **Postgres + pgvector** (Database & vector search)
-- **LangChain & LangGraph** (RAG & workflow management)
-- **Groq** (LLM for financial advice generation)
-- **Nomic** (Free API for embeddings)
-- **Supabase** (Postgres database & auth management)
-- **Alembic** (Database migrations)
-- **GitHub Actions** (Scheduled scraping automation)
+### 4. **Authentication & User Interaction**
+- Users must **register and log in**:
+  - **Register**: `POST /auth/register` with `email`, `username`, and `password`.
+  - **Login**: `POST /auth/login` to obtain an authentication token.
+- Authenticated users can access **/chat** for financial insights.
+- Currently, scraped data is limited to **Nvidia, Google, and Tesla**.
 
 ## Deployment & Automation
 
 - Web scraping runs **every 6 hours via GitHub Actions**.
-- The FastAPI background task ensures scraped data is embedded **every 6 hours**.
-- The embedding process also triggers **10 seconds after the server starts/restarts**.
-- Chat responses dynamically retrieve relevant embedded content via **RAG (Retrieval-Augmented Generation)**.
+- The FastAPI background task ensures embeddings update **every 6 hours**.
+- The embedding process also triggers **10 seconds after server restart**.
+- Chat responses dynamically retrieve relevant content via **RAG (Retrieval-Augmented Generation)**.
 
 ## Future Enhancements
 
@@ -130,9 +165,201 @@ Once logged in, users can access protected routes (lock icons in Swagger UI).
 ### 🚀 **Ready to test it out?**
 
 1. **Run the FastAPI server**.
-2. Visit Swagger UI (/docs) > **Register/Login** via any of the lock symbols.
-3. Head to `/chat` and start asking questions about Nvidia, Google, or Tesla!
+2. Visit Swagger UI (`/docs`) and **Register/Login**.
+3. Go to `/chat` and start asking questions about Nvidia, Google, or Tesla!
+
+**Chat & WebSocket Interaction**
+- The chat endpoint is available via the API, documented in Swagger UI.
+- An alternative WebSocket endpoint provides a more suitable interaction method:
+  - **WebSocket URL:** `wss://gamma-rag-financial-advisor.onrender.com/chat/ws?token=USER_TOKEN`
+## WebSocket Chat Testing  
+You can test the WebSocket chat endpoint using the test script in the repository:  
+
+[app/tests/test_websocket_chat.py](app/tests/test_websocket_chat.py)
+
 
 ---
 
 This project showcases a production-ready **LLM-powered RAG chatbot** with real-time updates and automated data ingestion.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Financial Advice System - Workflow Documentation
+
+## Overview
+This document provides a detailed breakdown of the financial advice system, including its workflow, components, and technical implementation.
+
+## Tech Stack
+- **Backend:** FastAPI
+- **Database & Vector Store:** Supabase (PostgreSQL with `pgvector` extension)
+- **Scraping:** Scrapy
+- **Embeddings:** Nomic (nomic-embed-text-v1.5)
+- **LLM:** DeepSeek via Groq API (deepseek-r1-distill-llama-70b)
+- **Orchestration:** LangGraph
+- **Authentication:** FastAPI Users
+- **Infrastructure:** GitHub Actions (for scheduled scraping jobs)
+
+## Live API Backend
+The API is deployed and accessible at: [Live Backend](https://gamma-rag-financial-advisor.onrender.com/)
+- Swagger UI: `/docs`
+- ReDoc: `/redoc`
+
+## Workflow Breakdown
+
+### 1. **News Scraping & Storage**
+- Scrapy extracts financial news articles.
+- Data is stored in the **articles table** in Supabase.
+- The GitHub Actions workflow runs the scraper every **6 hours**.
+- Schema of `articles` table:
+  ```sql
+  CREATE TABLE articles (
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      url TEXT UNIQUE NOT NULL,
+      stock_symbol TEXT NOT NULL,
+      title TEXT,
+      author TEXT,
+      published_date TEXT,
+      content TEXT,
+      scraped_at TIMESTAMPTZ NOT NULL,
+      is_embedded BOOLEAN DEFAULT FALSE
+  );
+  ```
+- Supabase's `pg_cron` extension deletes articles older than **24 hours**:
+  ```sql
+  select cron.schedule(
+      'delete_old_articles',
+      '0 */6 * * *',
+      $$ delete from articles where scraped_at < now() - interval '24 hours' $$
+  );
+  ```
+
+### 2. **Embedding Generation & Vector Storage**
+- A FastAPI background task retrieves **articles where `is_embedded=false`**.
+- It chunks the article content and calls **Nomic embeddings API**.
+- The generated embeddings are stored in the **documents table** in Supabase, which acts as a vector store.
+- **Documents table schema:**
+  ```sql
+  CREATE TABLE documents (
+      id UUID PRIMARY KEY,
+      content TEXT,
+      metadata JSONB,
+      embedding VECTOR(768)
+  );
+  ```
+- An **HNSW index** is created for fast approximate search:
+  ```sql
+  CREATE INDEX ON documents USING HNSW (embedding VECTOR_L2_OPS);
+  ```
+- The **embedding model** used:
+  ```python
+  embedding_model = NomicEmbeddings(
+      model='nomic-embed-text-v1.5',
+      inference_mode='remote',
+      nomic_api_key=os.getenv('NOMIC_API_KEY')
+  )
+  ```
+- After embedding, the system updates `is_embedded=true` in the articles table.
+
+### 3. **Retrieval & Response Generation**
+- When a user queries the system via `/chat` or WebSocket endpoint:
+  - The **retrieval service** fetches relevant articles using **match_documents function**.
+  - It **filters results with similarity >= 0.8**.
+  - The retrieved data is injected into a **LangGraph prompt template**.
+  ```sql
+  CREATE FUNCTION match_documents (
+      query_embedding VECTOR(768),
+      filter JSONB DEFAULT '{}'
+  ) RETURNS TABLE (
+      id UUID,
+      content TEXT,
+      metadata JSONB,
+      similarity FLOAT
+  ) LANGUAGE plpgsql AS $$
+  BEGIN
+      RETURN QUERY
+      SELECT id, content, metadata, 1 - (documents.embedding <=> query_embedding) AS similarity
+      FROM documents
+      WHERE metadata @> filter
+      ORDER BY documents.embedding <=> query_embedding;
+  END;
+  $$;
+  ```
+- The **LLM (DeepSeek via Groq API)** generates a response.
+  ```python
+  groq_llm = init_chat_model(
+      model='deepseek-r1-distill-llama-70b',
+      model_provider='groq',
+      temperature=0.5
+  )
+  ```
+- The response is streamed back to the user.
+
+### 4. **Chat & WebSocket Interaction**
+- The chat endpoint is available via the API, documented in Swagger UI.
+- An alternative WebSocket endpoint provides a more suitable interaction method:
+  - **WebSocket URL:** `wss://gamma-rag-financial-advisor.onrender.com/chat/ws?token=THE_TOKEN`
+- WebSocket chat can be tested using the script located at:
+  ```
+  app/tests/test_websocket_chat.py
+  ```
+
+### 5. **Authentication & User Interaction**
+- The system uses **FastAPI Users** for authentication.
+- Users sign up via `/auth/register` and log in.
+- Authenticated users can query data via `/chat` API or WebSocket.
+
+## Diagram (To be created in Excalidraw)
+The diagram will illustrate the entire workflow, showing:
+- **Scrapy fetching news articles**
+- **Supabase storing raw articles**
+- **Background tasks handling embedding generation**
+- **Supabase's vector store handling retrieval**
+- **LangGraph integrating embeddings with prompt templates**
+- **Groq's LLM generating responses**
+- **User interactions via FastAPI APIs and WebSockets**
+
+## Next Steps
+- **Design the Excalidraw diagram** with components, logos, and arrows for data flow.
+- **Refine this document** based on additional details or future improvements.
+

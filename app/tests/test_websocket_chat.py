@@ -16,7 +16,11 @@ import json
 JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1NzY3N2Q4Yy0wOWM4LTQ3MjItYWIzNy0wMTE2ZDA3N2EzYWYiLCJhdWQiOlsiZmFzdGFwaS11c2VyczphdXRoIl19.6m9mC-escj2eWbdgrwB-_D0rCiHvoeHm1bqSB_0_gvE"
 
 async def test_websocket():
-    uri = f"ws://localhost:8000/chat/ws?token={JWT_TOKEN}"
+    # Connect to the local WebSocket server
+    # uri = f"ws://localhost:8000/chat/ws?token={JWT_TOKEN}"
+
+    # Connect to the deployed WebSocket server
+    uri = f"wss://gamma-rag-financial-advisor.onrender.com/chat/ws"
     
     async with websockets.connect(uri) as websocket:
         print("Connected to WebSocket server.")

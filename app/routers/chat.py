@@ -10,11 +10,13 @@ from ..schemas.chat import ChatRequest, ChatResponse
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 @router.post("/", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, user: Annotated[User, Depends(current_active_user)]):
+async def chat_endpoint(request: ChatRequest):
+# async def chat_endpoint(request: ChatRequest, user: Annotated[User, Depends(current_active_user)]):
     """Endpoint to process user queries and generate AI responses
     based on the retrieved documents.
     """
-    logger.info(f"Received chat request from user: {user.id}, query: {request.query}")
+    logger.info(f"Received chat request, query: {request.query}")
+    # logger.info(f"Received chat request from user: {user.id}, query: {request.query}")
     
     try:
         logger.info("Initializing RAG chat workflow...")
