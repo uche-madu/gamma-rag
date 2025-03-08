@@ -157,19 +157,19 @@ async def process_query(state: GraphState) -> GraphState:
 
 
 async def format_prompt(state: GraphState) -> GraphState:
-    """Format prompt by combining conversation history and retrieved articles."""
+    """Format prompt by combining conversation history and retrieved articles (or a fallback if none exist)."""
     logger.info("Formatting prompt...")
     logger.debug(f"Current retrieved_docs: {state['retrieved_docs']}")
 
-    # Build conversation history string from state["messages"]
+    # Build conversation history from all messages.
     conversation_history = "\n".join(
         f"{msg['role']}: {msg['content']}" 
-        if isinstance(msg, dict)
+        if isinstance(msg, dict) 
         else f"human: {msg.content}"
         for msg in state["messages"]
     )
 
-    # Format retrieved articles (assuming they are dictionaries)
+    # Format retrieved articles if available.
     if isinstance(state["retrieved_docs"], list) and state["retrieved_docs"]:
         formatted_articles = "\n\n".join(
             f"- **{article['title']}** (Published on {datetime.fromisoformat(article['published_date']).strftime('%B %d, %Y') if article.get('published_date') else 'Unknown date'}): "
@@ -177,7 +177,11 @@ async def format_prompt(state: GraphState) -> GraphState:
             for article in state["retrieved_docs"]
         )
     else:
-        formatted_articles = ""  # No articles to include
+        # Fallback message: Inform the LLM that no recent articles were found.
+        formatted_articles = (
+            "No recent articles or data were retrieved for this topic. "
+            "Respond briefly using any general market knowledge you have."
+        )
 
     logger.debug(f"Formatted articles: {formatted_articles[:200]}")
     logger.debug(f"Conversation history: {conversation_history[:200]}")
