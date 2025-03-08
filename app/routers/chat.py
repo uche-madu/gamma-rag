@@ -18,29 +18,15 @@ async def chat_endpoint(request: ChatRequest):
     logger.info(f"Received chat request, query: {request.query}")
     # logger.info(f"Received chat request from user: {user.id}, query: {request.query}")
     
+    logger.info(f"Received chat request, query: {request.query}")
     try:
-        logger.info("Initializing RAG chat workflow...")
-        workflow = await rag_chat_workflow()
-        
-        initial_state = {
-            "query": request.query,  # Extract query from request model
-            "retrieved_docs": [],
-            "formatted_query": "",
-            "response": ""
-        }
-        
-        logger.info(f"Starting workflow execution with initial state: {initial_state}")
-
-        async for state in workflow.astream(initial_state):
-            logger.debug(f"Workflow state updated: {state}")  # Log intermediate states
-            final_state = state
-    
+        logger.info("Running chat workflow...")
+        final_state = await rag_chat_workflow(request.query)
         logger.success("Workflow execution completed successfully.")
-        logger.info(f'Final response generated: {final_state["generate_response"]["response"]}')
-
-        return ChatResponse(response=final_state["generate_response"]["response"])
-
+        # Assuming the final response is stored in state["response"]
+        response_text = final_state.get("response", "")
+        logger.info(f"Final response generated: {response_text}")
+        return ChatResponse(response=response_text)
     except Exception as e:
         logger.exception("Chat endpoint error")
         raise HTTPException(status_code=500, detail="Internal server error")
-

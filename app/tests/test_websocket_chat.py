@@ -27,7 +27,11 @@ async def test_websocket():
 
         # List of test queries to simulate user interactions
         test_queries = [
+            {"query": "Hi! my name is John."},
+            {"query": "What are the top news articles about Tesla?"},
             {"query": "What is the current market trend?"},
+            {"query": "Can you provide an analysis of Apple's stock?"},
+            {"query": "What is my name?"},
             {"query": "Is this a good time to buy Tesla stock?"},
             {"query": "What was my previous query?"}
         ]

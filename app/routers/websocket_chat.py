@@ -34,22 +34,11 @@ async def websocket_endpoint(
                 continue
 
             logger.info(f"📩 Received query from User {user_id}: {query}")
+            final_state = await rag_chat_workflow(query)
+            response_text = final_state.get("response", "")
+            if response_text:
+                await manager.send_personal_message(response_text, user_id)
 
-            # Initialize LangGraph workflow.
-            workflow = await rag_chat_workflow()
-            initial_state = {
-                "query": query,
-                "retrieved_docs": [],
-                "formatted_query": "",
-                "response": "",
-            }
-
-            async for state in workflow.astream(initial_state, stream_mode="updates"):
-                response_chunk = state.get("generate_response", {}).get("response", "")
-                if response_chunk:
-                    await manager.send_personal_message(response_chunk, user_id)
-
-            # Notify all users of the new activity.
             await manager.broadcast(f"🔔 User {user_id} sent a query", exclude_user_id=user_id)
 
     except WebSocketDisconnect:
