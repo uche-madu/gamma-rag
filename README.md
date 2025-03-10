@@ -9,7 +9,7 @@ The API is deployed and accessible at: [Live Backend](https://gamma-rag-financia
 
 ## Workflow
 
-![Workflow Diagram](assets/gamma_financial_advisor.png)
+![Project Diagram](assets/gamma_financial_advisor.png)
 
 ## Features
 
@@ -137,7 +137,18 @@ scrapy crawl news
       temperature=0.5
   )
   ```
+- Conditionally, after 6 user messages in a single thread, the previous messages
+  are summarized via an LLM call.
+  ```python
+  llama3_70b_llm = init_chat_model( 
+    model="llama3-70b-8192", 
+    model_provider="groq",
+    temperature=0.5
+  )
+  ```
 - The response is streamed back to the user.
+
+![Langraph Workflow Diagram](assets/state_graph.png)
 
 ### 4. **Authentication & User Interaction**
 - Users must **register and log in**:
