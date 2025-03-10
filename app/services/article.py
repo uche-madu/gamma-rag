@@ -27,8 +27,8 @@ async def load_articles(session: AsyncSession) -> tuple[list[Document], list[Art
     articles = list(result.scalars().all())
 
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
+        chunk_size=1200,
+        chunk_overlap=200,
     )
 
     documents: list[Document] = []

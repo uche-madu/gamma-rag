@@ -1,12 +1,11 @@
 import asyncio
 import re
 from datetime import datetime
-from typing import List, Sequence, Union, TypedDict
-from typing_extensions import Annotated
+from typing import Literal, Sequence, Union
 import uuid
-from textwrap import dedent
 
-from langgraph.graph import StateGraph, add_messages
+from langgraph.graph import StateGraph, MessagesState, END
+from langchain_core.messages import RemoveMessage, HumanMessage, AIMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.prompts import ChatPromptTemplate
 from loguru import logger
@@ -16,7 +15,7 @@ from textblob import TextBlob
 
 from ..schemas.retrieval import ErrorResponse, RetrievalResponse, RetrievedArticle
 from .retrieval import format_retrieved_articles
-from ..config import groq_llm
+from ..config import ds_r1_llama_70b_llm, llama3_70b_llm
 
 def get_combined_sentiment(text: str) -> str:
     # VADER sentiment score
@@ -40,76 +39,15 @@ def extract_user_response(response: str) -> str:
     """
     Extract the user-facing response by first removing any <think>...</think> tags 
     and then extracting the content between the first pair of '---' delimiters.
-    
     Any text outside the delimiters is removed, as it is not meant for the user.
     If the delimiters are not found, the cleaned response (without think tags) is returned.
     """
-    # Remove content within <think>...</think> tags.
     response_cleaned = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
-    
-    # Extract the text between the first pair of triple-dash delimiters.
     match = re.search(r'---\s*(.*?)\s*---', response_cleaned, re.DOTALL)
     if match:
         return match.group(1).strip()
     else:
         return response_cleaned.strip()
-
-
-# Create a RunnableLambda for the output parser
-output_parser = RunnableLambda(extract_user_response)
-
-# Get the current date dynamically
-current_date = datetime.today().strftime("%B %d, %Y")
-
-prompt_template = ChatPromptTemplate.from_messages([
-    ("system", dedent(f"""\ 
-        You are an experienced financial analyst specializing in investment research.
-        Aside from that, you can have regular, non-investment conversations with the user.
-        When the input is related to your primary task of investment research and financial advisory,
-        try to retrieve relevant information to provide an informed response.
-
-        Be flexible in how you present your analysis, avoiding a rigid structure.
-        Ensure your response is clear, actionable, and personalized for the user.
-        When you respond, address the user directly, without using third-person language.
-
-        If the query is about investment advice, provide a summary of insights, discuss potential advantages
-        and risks, and tailor your response to the sentiment captured from the user input.
-        Include a disclaimer that this is not professional financial advice, and use recent information by default unless otherwise specified.
-        If there's no relevant data, briefly mention that and suggest a different query or approach.
-
-        Your response does not have to be too lengthy—be concise, friendly, and to the point.
-
-        Today's date is {current_date}.
-    """)),
-    ("human", dedent("""\
-        **Conversation History:**
-        {conversation_history}
-
-        **Retrieved Articles:**
-        {formatted_articles}
-    """))
-])
-
-# Initialize MemorySaver for checkpointing
-memory = MemorySaver()
-
-# Create a config with all required keys
-thread_id = str(uuid.uuid4())
-config: RunnableConfig = RunnableConfig(configurable={
-    "thread_id": thread_id,
-    "checkpoint_ns": "default_ns",
-    "checkpoint_id": "default_id"
-})
-
-class GraphState(TypedDict):
-    """State management for user queries, retrieved documents, and AI responses."""
-    messages: Annotated[List, add_messages]
-    retrieved_docs: Union[Sequence[Union[RetrievedArticle, dict]], str]
-    formatted_query: str
-    sentiment: str
-    response: str
-    thread_id: str  # added to satisfy checkpointer if needed
-
 
 def serialize_retrieved_article(article: RetrievedArticle) -> dict:
     """
@@ -120,22 +58,56 @@ def serialize_retrieved_article(article: RetrievedArticle) -> dict:
         data["url"] = str(data["url"])
     return data
 
+# Create a RunnableLambda for the output parser
+output_parser = RunnableLambda(extract_user_response)
 
-async def process_query(state: GraphState) -> GraphState:
-    """Retrieve relevant articles and update state with the new query."""
-    # Get the new query from the last message (supporting both dicts and objects)
+prompt_template = ChatPromptTemplate.from_messages([
+    ("system", """
+        You are an experienced financial analyst specializing in investment research.
+        Conversation Summary: {conversation_summary}
+        
+        **Retrieved Articles:**
+        {formatted_articles}
+        
+        You are designed to provide detailed analysis and balanced recommendations based on recent news articles retrieved from a vectorstore.
+        When the query is investment-related, use the retrieved articles to deliver a comprehensive analysis covering potential opportunities, risks, and market trends. If no relevant data is retrieved, inform the user and suggest a refined query.
+        If the user's query is casual or not directly related to investments or finance, respond with a variation of depending on the context:
+            "This system is optimized for handling finance and investment-related queries. Please ask a question related to investments or financial markets for a comprehensive analysis."
+        Ensure your response is clear, actionable, and personalized. Address the user directly without using third-person language.
+        Conditionally (only for suitable queries) include a disclaimer. Use recent information by default unless otherwise specified. When using retrieved articles, include the unique source urls for reference at the end of the response.
+        
+        Today's date is {current_date}.
+    """),
+    ("human", """
+        {query}
+    """)
+])
+
+# Initialize MemorySaver for checkpointing
+memory = MemorySaver()
+
+# Create a config with all required keys
+thread_id = str(uuid.uuid4())
+config: RunnableConfig = RunnableConfig(configurable={"thread_id": thread_id })
+
+# Extend State from MessagesState to include a summary.
+class State(MessagesState):
+    """State management for user queries, retrieved documents, and AI responses."""
+    retrieved_docs: Union[Sequence[Union[RetrievedArticle, dict]], str]
+    formatted_query: str
+    sentiment: str
+    summary: str
+
+# Node: Process query (retrieve articles).
+async def process_query(state: State) -> State:
     last_message = state["messages"][-1]
     query = last_message["content"] if isinstance(last_message, dict) else last_message.content
     logger.info(f"Processing query: {query}")
-
-    # Here we assume that state["messages"] is already our conversation history.
-    # If not, you could initialize a dedicated 'conversation_history' key.
-    # For this example, we'll treat state["messages"] as the full history.
-
     try:
+        if not isinstance(query, str):
+            raise ValueError("Query must be a string.")
         articles_response = await format_retrieved_articles(query)
         logger.info(f"Retrieved response type: {type(articles_response)}")
-
         if isinstance(articles_response, RetrievalResponse):
             articles = articles_response.retrieved_insights
             logger.info(f"Retrieved {len(articles)} articles.")
@@ -146,30 +118,18 @@ async def process_query(state: GraphState) -> GraphState:
             logger.warning(f"ErrorResponse received: {articles}")
         else:
             raise ValueError("Unexpected response format from format_retrieved_articles.")
-
         state["retrieved_docs"] = articles
         logger.info(f"Updated state['retrieved_docs']: {articles[:2] if isinstance(articles, list) else articles}")
+        return state
     except Exception as e:
         logger.error(f"Error retrieving articles: {e}")
-        state["retrieved_docs"] = "An error occurred while retrieving articles."
-
-    return state
+        raise e
 
 
-async def format_prompt(state: GraphState) -> GraphState:
-    """Format prompt by combining conversation history and retrieved articles (or a fallback if none exist)."""
+# Node: Format prompt using conversation history (including summary if available).
+async def format_prompt(state: State) -> State:
     logger.info("Formatting prompt...")
-    logger.debug(f"Current retrieved_docs: {state['retrieved_docs']}")
 
-    # Build conversation history from all messages.
-    conversation_history = "\n".join(
-        f"{msg['role']}: {msg['content']}" 
-        if isinstance(msg, dict) 
-        else f"human: {msg.content}"
-        for msg in state["messages"]
-    )
-
-    # Format retrieved articles if available.
     if isinstance(state["retrieved_docs"], list) and state["retrieved_docs"]:
         formatted_articles = "\n\n".join(
             f"- **{article['title']}** (Published on {datetime.fromisoformat(article['published_date']).strftime('%B %d, %Y') if article.get('published_date') else 'Unknown date'}): "
@@ -177,99 +137,136 @@ async def format_prompt(state: GraphState) -> GraphState:
             for article in state["retrieved_docs"]
         )
     else:
-        # Fallback message: Inform the LLM that no recent articles were found.
         formatted_articles = (
             "No recent articles or data were retrieved for this topic. "
-            "Respond briefly using any general market knowledge you have."
         )
-
-    logger.debug(f"Formatted articles: {formatted_articles[:200]}")
-    logger.debug(f"Conversation history: {conversation_history[:200]}")
-
     try:
+        current_date = datetime.today().strftime("%B %d, %Y")
+        conversation_summary = state.get("summary", "")
         state["formatted_query"] = prompt_template.format(
-            conversation_history=conversation_history,
-            formatted_articles=formatted_articles
+            conversation_summary=conversation_summary,
+            formatted_articles=formatted_articles,
+            current_date=current_date,
+            query=state["messages"][-1].content
         )
         logger.info("Prompt formatted successfully.")
+        return state
     except Exception as e:
         logger.error(f"Error formatting prompt: {e}")
-        state["formatted_query"] = "Error formatting the query."
+        raise e
 
-    return state
-
-
-async def analyze_sentiment(state: GraphState) -> GraphState:
-    """Analyze the sentiment of the user query and update the prompt."""
+# Node: Analyze sentiment.
+async def analyze_sentiment(state: State) -> State:
     logger.info("Analyzing sentiment for the query...")
     last_message = state["messages"][-1]
     message_text = last_message["content"] if isinstance(last_message, dict) else last_message.content
     sentiment = await asyncio.to_thread(get_combined_sentiment, message_text)
     state["sentiment"] = sentiment
-
     if sentiment == "positive":
         sentiment_prompt = (
-            "The user appears optimistic about this investment. Provide a balanced analysis with potential opportunities and risks."
+            "The user appears optimistic. Provide a balanced analysis with potential opportunities and risks if the query is related to investment or finance."
         )
     elif sentiment == "negative":
         sentiment_prompt = (
-            "The user appears cautious about this investment. Focus on risk mitigation strategies and market stability."
+            "The user appears cautious. Focus on risk mitigation strategies and market stability if the query is related to investment or finance."
         )
     else:
         sentiment_prompt = (
-            "The user seems neutral about this investment. Provide an unbiased and comprehensive analysis."
+            "The user seems neutral. Provide an unbiased and comprehensive analysis if the query is related to investment or finance."
         )
-
     state["formatted_query"] += "\n\n" + sentiment_prompt
     logger.debug(f"Sentiment analysis complete. Sentiment: {sentiment}")
     return state
 
-async def generate_response(state: GraphState) -> GraphState:
-    """Generate AI response and process output."""
+# Node: Generate response.
+async def generate_response(state: State):
     logger.info("Generating AI response...")
     logger.debug(f"Formatted Query (first 200 chars): {state['formatted_query'][:200]}")
-
     try:
-        response = await groq_llm.ainvoke(state["formatted_query"], config=config)
+        response = await ds_r1_llama_70b_llm.ainvoke(state["formatted_query"], config=config)
         raw_response = response.content
         if isinstance(raw_response, str):
-            state["response"] = await output_parser.ainvoke(raw_response, config=config)
-        logger.info(f"Generated and processed response successfully. Length: {len(state['response'])}")
+            response = await output_parser.ainvoke(raw_response, config=config)
+            logger.info(f"Generated and processed response successfully. Length: {len(state['messages'])}")
+            return {"messages": [response]}
     except Exception as e:
         logger.error(f"Error generating or processing chat response: {e}")
-        state["response"] = "Sorry, I encountered an issue processing your request."
-    return state
+        raise e
 
-async def rag_chat_workflow(query: str) -> dict:
-    """
-    Initialize, compile, and run the LangGraph workflow for the given query.
-    Returns the final state produced by the workflow.
-    """
-    graph = StateGraph(GraphState)
+# Node: Summarize conversation history using llama3_70b_llm.
+async def summarize_conversation(state: State):
+    logger.info("Summarizing conversation history...")
+    summary = state.get("summary", "")
+    if summary:
+        summary_message = (
+            f"This is summary of the conversation to date: {summary}\n\n"
+            "Extend the summary by taking into account the new messages above:"
+        )
+    else:
+        summary_message = "Create a summary of the conversation above:"
     
+    # Create a summarization prompt by appending the summary instruction.
+    messages_for_summary = state["messages"] + [HumanMessage(content=summary_message)]
+    
+    try:
+        response = await llama3_70b_llm.ainvoke(messages_for_summary, config=config)
+        logger.info("Conversation history summarized.")
+        delete_messages = [RemoveMessage(id=m.id) for m in state["messages"][:-2]]
+        return {"summary": response.content, "messages": delete_messages}
+
+    except Exception as e:
+        logger.error(f"Error summarizing conversation: {e}")
+        raise e
+
+# Conditional node: Decide whether to summarize the conversation.
+async def should_continue(state: State) -> Literal["summarize_conversation", END]:
+    if len(state["messages"]) > 6:
+        return "summarize_conversation"
+    return END
+
+# Workflow: Chain nodes including the conditional summarization.
+# Conditional node: Decide whether to summarize the conversation.
+async def rag_chat_workflow(query: str) -> str:
+    graph = StateGraph(State)
+    
+    # Add nodes.
     graph.add_node("process_query", process_query)
     graph.add_node("format_prompt", format_prompt)
     graph.add_node("analyze_sentiment", analyze_sentiment)
     graph.add_node("generate_response", generate_response)
+    graph.add_node("summarize_conversation", summarize_conversation)
     
+    # Set entry point.
     graph.set_entry_point("process_query")
+    # Define edges.
     graph.add_edge("process_query", "format_prompt")
     graph.add_edge("format_prompt", "analyze_sentiment")
     graph.add_edge("analyze_sentiment", "generate_response")
-
-    logger.info("LangGraph workflow initialized.")
-
-    compiled_workflow = graph.compile(checkpointer=memory)
     
-    initial_state = {
-        "messages": [{"role": "user", "content": query}],
-        "retrieved_docs": [],
-        "formatted_query": "",
-        "sentiment": "",
-        "response": "",
-        "thread_id": thread_id  # if needed
-    }
+    # Add a conditional edge from generate_response.
+    graph.add_conditional_edges("generate_response", should_continue)
+    # After summarization, end the workflow.
+    graph.add_edge("summarize_conversation", END)
+    
+    logger.info("LangGraph workflow initialized.")
+    compiled_workflow = graph.compile(checkpointer=memory)
 
-    final_state = await compiled_workflow.ainvoke(initial_state, config=config)
-    logger.info("LangGraph workflow execution completed.")
-    return final_state
+    # Generate the PNG data.
+    png_data = compiled_workflow.get_graph().draw_mermaid_png()
+    with open("assets/state_graph.png", "wb") as f:
+        f.write(png_data)
+    logger.info("State graph saved to state_graph.png")
+    
+    input_message = HumanMessage(content=query)
+    final_state = await compiled_workflow.ainvoke({"messages": [input_message]}, config=config)
+    
+    # Extract the final response from the last message.
+    if final_state.get("messages"):
+        final_response = final_state["messages"][-1].content
+        logger.success("Workflow execution completed successfully.")
+        logger.info(f"Final response: {final_response}")
+        return final_response
+    else:
+        logger.error("No messages found in final state.")
+        return ""
+
