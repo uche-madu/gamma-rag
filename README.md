@@ -7,6 +7,9 @@ The API is deployed and accessible at: [Live Backend](https://gamma-rag-financia
 - Swagger UI: `/docs`
 - ReDoc: `/redoc`
 
+## Live Demo Frontend
+Test the API [Frontend UI](https://gamma-advisor.vercel.app/)
+
 ## Workflow
 
 ![Project Diagram](assets/gamma_financial_advisor.png)
